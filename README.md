@@ -5,8 +5,6 @@ This addon is designed to enhance the Final Fantasy XI experience by adding a bi
 
 Support for theme packs or rule packs is fully supported, being able to be tailored for a personal configuration. A Futurama theme was developed to test functionality and is a good starting point to develop more constomised packs.
 
-The addon also offers a "fun mode" that allows you to unleash a barrage of your quirky and amusing messages, adding a lighthearted touch to your adventures. And if you want to make sure your messages always get through, you can activate the "force mode" to guarantee 100% delivery. Messages are defined as Critical or Fun, Fun messages are disabled by default to prevent spam.
-
 
 Usage:
 
@@ -21,14 +19,23 @@ In game commands:
 [Activate addon - toggle]
 //pchats chat
 
-[Activate Fun Mode - Toggle]
-//pchats fun
+//pchats theme (filename)
+Loads the theme of the filename, do not add .lua
 
-[Swap Theme]
-//pchats theme *Filename*
+//pchats debug_mode
+Toggle - displays complete action information
 
-[Force critical messages ON - Toggle]
-//pchats forcecrit
+//pchats fun_chance (num)
+Value between 0 and 1, default is 0.3 for 30% chance
 
-[Force Fun messages normal/10/25/50/always- Toggle]
-//pchat forcefun
+//pchats unique_chance (num)
+Value between 0 and 1, default is 0.1 for 10% chance
+
+//pchats enable_critical
+Toggle - Disables mesages of this class
+
+//pchats enable_fun
+Toggle - Disables mesages of this class
+
+//pchats enable_unique
+Toggle - Disables mesages of this class
