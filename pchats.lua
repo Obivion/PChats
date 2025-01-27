@@ -1,33 +1,8 @@
 -- PartyChats Addon
---[[Copyright © 2025, Obi of Hades
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in the
-      documentation and/or other materials provided with the distribution.
-    * Neither the name of PartyChats nor the
-      names of its contributors may be used to endorse or promote products
-      derived from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL OBI BE LIABLE FOR ANY
-DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.]]
 
 _addon.name = 'PartyChats'
 _addon.author = 'Obi The Magnificent'
-_addon.version = '0.5' -- Updated version
+_addon.version = '0.4'
 _addon.command = 'pchats'
 
 require 'tables'
@@ -35,109 +10,192 @@ require 'sets'
 require 'strings'
 require 'actions'
 require 'pack'
-require 'logger'
 res = require 'resources'
-files = require 'files'
 
---Variables
+-- Debug mode variable (0 = off, 1 = on)
+local debug_mode = 0
 
-pchatsrun = 0
-funmode = 0 -- Variable for fun mode
-current_theme = 'default' -- Variable to store the current theme
-force_critical = 0  -- New variable: force_critical
-force_fun = 0  -- New variable: force_fun
+-- Variables for message probabilities and toggles
+local fun_chance = 0.30  -- Default: 30% chance for fun messages
+local unique_chance = 0.10  -- Default: 10% chance for unique messages
+local enable_critical = true  -- Default: Enable critical messages
+local enable_fun = true  -- Default: Enable fun messages
+local enable_unique = true  -- Default: Enable unique messages
 
-windower.register_event('action', function(act)
-    -- Check if the addon is running
-    if pchatsrun == 1 then
-        -- Get information about the action
-        local actor = windower.ffxi.get_mob_by_id(act.actor_id)
-        local self = windower.ffxi.get_player()
-        local target_count = act.target_count
-        local category = act.category
-        local param = act.param
-        local recast = act.recast
-        local targets = act.targets
-        local primarytarget = windower.ffxi.get_mob_by_id(targets[1].id)
-        local valid_target = act.valid_target
+-- Function to load a theme from the themes folder
+local function load_theme(name)
+    local theme_file = windower.addon_path .. 'themes/' .. name .. '.lua'
+    local success, theme = pcall(dofile, theme_file)
+    if success then
+        windower.add_to_chat(207, string.format('Theme "%s" loaded successfully.', name))
+        if theme.description then
+            windower.add_to_chat(207, string.format('Description: %s', theme.description))
+        end
+        return theme
+    else
+        windower.add_to_chat(207, string.format('Failed to load theme "%s". Falling back to default.', name))
+        return dofile(windower.addon_path .. 'themes/default.lua')
+    end
+end
 
-        -- Check if the action was performed by the player
-        if actor.name == self.name then
-            local message_data = nil -- Initialize variable to store message data
-            local ability_messages = require('themes/' .. current_theme) -- Load the current theme's messages
+-- Load the default theme
+local theme_name = 'default'
+local message_table = load_theme(theme_name)
 
-            -- Check the action category and retrieve the corresponding message data
-            if act.category == 6 and res.job_abilities[act.param] then -- Job ability
-                local ability_name = res.job_abilities[act.param].en -- Get the ability name
-                message_data = ability_messages[ability_name] -- Get the message data from the table
-            elseif act.category == 8 and res.spells[targets[1].actions[1].param] then -- Spell
-                local spell_name = res.spells[targets[1].actions[1].param].en -- Get the spell name from the nested actions table
-                message_data = ability_messages[spell_name] -- Get the message data from the table
-            elseif act.category == 7 and res.job_abilities[act.param] then -- Weapon skill
-                local ability_name = res.job_abilities[act.param].en -- Get the weapon skill name
-                message_data = ability_messages[ability_name] -- Get the message data from the table
-            end
-
-            -- If message data was found for the action
-			if message_data then
-				if message_data.type == 'critical' and force_critical == 1 then  -- Force critical messages
-					local messages = message_data.messages
-					local selected_message = messages[math.random(#messages)]
-					windower.send_command('p ' .. selected_message.message)
-				elseif message_data.type == 'fun' and funmode == 1 then  -- Fun messages
-					local messages = message_data.messages
-					local selected_message = messages[math.random(#messages)]
-					if force_fun == 100 or math.random(100) <= force_fun or math.random(100) <= selected_message.chance then
-						windower.send_command('p ' .. selected_message.message)
-					end
-				end
-			end
+-- Function to handle commands
+windower.register_event('addon command', function(command, ...)
+    local args = {...}
+    if command == 'debug_mode' then
+        debug_mode = 1 - debug_mode  -- Toggle between 0 and 1
+        windower.add_to_chat(207, string.format('Debug mode is now %s', debug_mode == 1 and 'ON' or 'OFF'))
+    elseif command == 'fun_chance' then
+        local chance = tonumber(args[1])
+        if chance and chance >= 0 and chance <= 1 then
+            fun_chance = chance
+            windower.add_to_chat(207, string.format('Fun message chance set to %.0f%%', fun_chance * 100))
+        else
+            windower.add_to_chat(207, 'Invalid value for fun_chance. Must be between 0 and 1.')
+        end
+    elseif command == 'unique_chance' then
+        local chance = tonumber(args[1])
+        if chance and chance >= 0 and chance <= 1 then
+            unique_chance = chance
+            windower.add_to_chat(207, string.format('Unique message chance set to %.0f%%', unique_chance * 100))
+        else
+            windower.add_to_chat(207, 'Invalid value for unique_chance. Must be between 0 and 1.')
+        end
+    elseif command == 'enable_critical' then
+        enable_critical = not enable_critical  -- Toggle critical messages
+        windower.add_to_chat(207, string.format('Critical messages %s.', enable_critical and 'enabled' or 'disabled'))
+    elseif command == 'enable_fun' then
+        enable_fun = not enable_fun  -- Toggle fun messages
+        windower.add_to_chat(207, string.format('Fun messages %s.', enable_fun and 'enabled' or 'disabled'))
+    elseif command == 'enable_unique' then
+        enable_unique = not enable_unique  -- Toggle unique messages
+        windower.add_to_chat(207, string.format('Unique messages %s.', enable_unique and 'enabled' or 'disabled'))
+    elseif command == 'theme' then
+        local new_theme = args[1]
+        if new_theme then
+            theme_name = new_theme
+            message_table = load_theme(theme_name)
+        else
+            windower.add_to_chat(207, 'Please specify a theme name.')
         end
     end
 end)
 
-windower.register_event('addon command', function(command, ...)
-    local args = L{...}
-
-    if command:lower() == 'forcecrit' then
-        force_critical = (force_critical == 0) and 1 or 0
-        windower.add_to_chat(7, (force_critical == 1) and "Force Critical: Always On" or "Force Critical: Normal Mode")
+-- Function to select a random message from a table or return the message itself
+local function get_random_message(messages)
+    if type(messages) == 'table' then
+        return messages[math.random(#messages)]  -- Randomly select one message from the table
+    else
+        return messages  -- Return the single message
     end
-
-if command:lower() == 'forcefun' then
-    local fun_levels = { 0, 10, 25, 50, 100 }  -- Available fun levels
-    local current_index = table.find(fun_levels, force_fun) or 1  -- Find current level or default to 1
-    local next_index = current_index % #fun_levels + 1  -- Calculate next index, wrapping around
-    force_fun = fun_levels[next_index]  -- Set force_fun to the next level
-
-    -- Display the current force_fun level
-    local fun_message = "Force Fun: " .. (force_fun > 0 and force_fun .. "%" or "Normal Mode")
-    windower.add_to_chat(7, fun_message)
 end
-	
-    if command:lower() == 'chat' then -- Changed command to 'chat'
-        pchatsrun = (pchatsrun == 0) and 1 or 0 -- Toggle pchatsrun
-        windower.add_to_chat(7, (pchatsrun == 1) and "Party Chat Addon Started" or "Party Chat Addon Stopped")
+
+-- Function to select a message based on classifications
+local function select_message(message_data, category)
+    if not message_data then return nil end
+
+    -- Handle Category 4 (finish casting spells) separately
+    if category == 4 then
+        if message_data.after_mes then
+            local after_mes_data = message_data.after_mes
+            -- Check for unique message (if enabled and chance is met)
+            if enable_unique and after_mes_data.unique and math.random() <= unique_chance then
+                return get_random_message(after_mes_data.unique)
+            end
+
+            -- Check for fun message (if enabled and chance is met)
+            if enable_fun and after_mes_data.fun and math.random() <= fun_chance then
+                return get_random_message(after_mes_data.fun)
+            end
+
+            -- Fall back to critical message (if enabled)
+            if enable_critical and after_mes_data.critical then
+                return get_random_message(after_mes_data.critical)
+            end
+
+            -- No message available
+            return nil
+        else
+            return nil  -- No after_mes defined, so don't send a message
+        end
     end
 
-    if command:lower() == 'fun' then -- Changed command to 'fun'
-        funmode = (funmode == 0) and 1 or 0 -- Toggle funmode
-        windower.add_to_chat(7, (funmode == 1) and "Fun Mode On" or "Fun Mode Off")
+    -- Check for unique message (if enabled and chance is met)
+    if enable_unique and message_data.unique and math.random() <= unique_chance then
+        return get_random_message(message_data.unique)
     end
 
-	if command:lower() == 'theme' then
-		local theme = args[1]
-		if theme then
-			-- Construct the correct relative path to the theme file
-			local theme_file = 'themes/' .. theme .. '.lua' 
-			if files.new(theme_file):exists() then
-				current_theme = theme
-				windower.add_to_chat(7, 'Theme set to: ' .. theme)
-			else
-				windower.add_to_chat(7, 'Error: Theme "' .. theme .. '" not found.')
-			end
-		else
-			windower.add_to_chat(7, 'Usage: //pchats theme <theme_name>')
-		end
-	end
+    -- Check for fun message (if enabled and chance is met)
+    if enable_fun and message_data.fun and math.random() <= fun_chance then
+        return get_random_message(message_data.fun)
+    end
+
+    -- Fall back to critical message (if enabled)
+    if enable_critical and message_data.critical then
+        return get_random_message(message_data.critical)
+    end
+
+    -- No message available
+    return nil
+end
+
+windower.register_event('action', function(act)
+    local actor = windower.ffxi.get_mob_by_id(act.actor_id)
+    local self = windower.ffxi.get_player()
+    local targets = act.targets
+
+    -- Ensure the action is performed by the player
+    if actor.name == self.name then
+        if targets and targets[1] then
+            local primarytarget = windower.ffxi.get_mob_by_id(targets[1].id)
+            local param = act.param
+            local category = act.category
+
+            -- Display target information
+            local targetInfo = string.format('Target: %s (ID: %d)', primarytarget.name, primarytarget.id)
+
+            -- Only display debug information if debug_mode is 1
+            if debug_mode == 1 then
+                if category == 7 then  -- Weapon skill
+                    if res.weapon_skills[targets[1].actions[1].param] then
+                        windower.add_to_chat(207, string.format('%s %s: %s uses %s on %s', MSG_READY_MOVE, category, actor.name, res.weapon_skills[targets[1].actions[1].param].en, targetInfo))
+                    end
+                elseif category == 8 then  -- Start casting spell
+                    if res.spells[targets[1].actions[1].param] then
+                        windower.add_to_chat(207, string.format('%s %s: %s begins casting %s (%s) on %s', MSG_BEGIN_CAST, category, actor.name, res.spells[targets[1].actions[1].param].en, res.skills[res.spells[targets[1].actions[1].param].skill].en, targetInfo))
+                    end
+                elseif category == 6 or category == 13 or category == 14 or category == 15 then  -- Job abilities
+                    if res.job_abilities[param] then
+                        windower.add_to_chat(207, string.format('%s %s: %s uses %s on %s', MSG_READY_MOVE, category, actor.name, res.job_abilities[param].en, targetInfo))
+                    end
+                end
+            end
+
+            -- Check for predefined messages and send to party chat
+            local action_name
+            if category == 7 then  -- Weapon skill
+                action_name = res.weapon_skills[targets[1].actions[1].param] and res.weapon_skills[targets[1].actions[1].param].en
+            elseif category == 8 then  -- Start casting spell
+                action_name = res.spells[targets[1].actions[1].param] and res.spells[targets[1].actions[1].param].en
+            elseif category == 4 then  -- Finish casting spell
+                action_name = res.spells[param] and res.spells[param].en
+            elseif category == 6 or category == 13 or category == 14 or category == 15 then  -- Job ability
+                action_name = res.job_abilities[param] and res.job_abilities[param].en
+            end
+
+            if action_name and message_table[action_name] then
+                local message_data = message_table[action_name]
+                local message = select_message(message_data, category)
+
+                if message then
+                    message = message:gsub("PLAYER", actor.name)  -- Replace PLAYER with the actor's name
+                    message = message:gsub("TARGET", primarytarget.name)  -- Replace TARGET with the target's name
+                    windower.send_command('input /p ' .. message)  -- Send the message to party chat
+                end
+            end
+        end
+    end
 end)
